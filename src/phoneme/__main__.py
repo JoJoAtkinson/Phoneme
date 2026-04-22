@@ -10,6 +10,11 @@ def main() -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+
+    from .runtime import describe
+
+    logging.getLogger("phoneme").info("runtime: %s", describe())
+
     from PySide6.QtWidgets import QApplication
 
     from .ui.main_window import MainWindow

@@ -53,6 +53,10 @@ OPTIONS = {
         "onnxruntime",
         "faster_whisper",
         "kokoro_onnx",
+        # Apple Silicon accelerators (installed via --extra mac)
+        "mlx",
+        "mlx_whisper",
+        "parakeet_mlx",
     ],
     "includes": [
         "phoneme.ui.main_window",

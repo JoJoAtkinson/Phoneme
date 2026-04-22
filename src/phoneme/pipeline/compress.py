@@ -20,6 +20,7 @@ import numpy as np
 
 from ..data.reverse_phoneme import lookup
 from ..models.phoneme import Wav2Vec2PhonemeRecognizer
+from ..runtime import torch_device
 from .base import Pipeline
 from .events import CompressedWord, PartialPhonemes
 
@@ -30,7 +31,7 @@ class CompressPipeline(Pipeline):
     def __init__(self, settings, emit):
         super().__init__(settings, emit)
         self._phonemes = Wav2Vec2PhonemeRecognizer(
-            device="mps" if settings.prefer_mps else None,
+            device=torch_device() if settings.prefer_mps else "cpu",
         )
         self._buffer: list[str] = []
         self._lock = threading.Lock()

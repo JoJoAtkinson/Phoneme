@@ -13,6 +13,7 @@ import logging
 import numpy as np
 
 from ..models.phoneme import Wav2Vec2PhonemeRecognizer
+from ..runtime import torch_device
 from .base import Pipeline
 from .events import PartialPhonemes, UtteranceEnded
 
@@ -24,7 +25,7 @@ class StreamingPipeline(Pipeline):
         super().__init__(settings, emit)
         self._phonemes = Wav2Vec2PhonemeRecognizer(
             model_key="phoneme/wav2vec2-espeak",
-            device="mps" if settings.prefer_mps else None,
+            device=torch_device() if settings.prefer_mps else "cpu",
         )
 
     def _wants_streaming(self) -> bool:

@@ -13,8 +13,9 @@ import logging
 
 import numpy as np
 
-from ..models.asr_whisper import FasterWhisperASR
+from ..models.asr import build_asr
 from ..models.phoneme import Wav2Vec2PhonemeRecognizer
+from ..runtime import torch_device
 from .base import Pipeline
 from .events import PartialPhonemes, Transcription
 from .utterance import _group_phonemes_by_words
@@ -26,9 +27,9 @@ class AlignedPipeline(Pipeline):
     def __init__(self, settings, emit):
         super().__init__(settings, emit)
         self._phonemes = Wav2Vec2PhonemeRecognizer(
-            device="mps" if settings.prefer_mps else None,
+            device=torch_device() if settings.prefer_mps else "cpu",
         )
-        self._asr = FasterWhisperASR(model_size=settings.whisper_model_size)
+        self._asr = build_asr(settings)
 
     def _wants_streaming(self) -> bool:
         return True

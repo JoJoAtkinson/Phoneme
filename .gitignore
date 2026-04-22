@@ -27,8 +27,11 @@ venv/
 Phoneme.app/
 Phoneme.dmg
 
-# Model cache (downloaded lazily at runtime)
-models/
+# Model weights cache if the user points downloads at the repo (defaults
+# are under ~/Library/Application Support/Phoneme/models/ so this is a
+# belt-and-suspenders ignore). Anchored to repo root so it doesn't
+# accidentally hide src/phoneme/models/ source code.
+/models/
 .cache/
 
 # Test artifacts
