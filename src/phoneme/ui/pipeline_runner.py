@@ -37,6 +37,7 @@ def build_pipeline(settings: Settings, emit) -> Pipeline:
 
 class PipelineRunner(QObject):
     event = Signal(object)
+    pipeline_ready = Signal()
 
     def __init__(self, settings: Settings):
         super().__init__()
@@ -57,6 +58,7 @@ class PipelineRunner(QObject):
                     log.exception("warmup failed: %s", e)
             try:
                 self.pipeline.start()
+                self.pipeline_ready.emit()
             except Exception as e:
                 log.exception("pipeline start failed: %s", e)
 
@@ -78,3 +80,14 @@ class PipelineRunner(QObject):
         # Qt.QueuedConnection for cross-thread signal delivery is automatic
         # when emitter and receiver live in different threads.
         self.event.emit(event)
+
+    # ---- exposed mic buffer for spectrogram / level meters ------------
+
+    def mic_source(self):
+        """Return (read_latest, total_written) callables, or None if mic
+        isn't running yet. Safe to call any time; returns fresh callables
+        each call, which always point at the current pipeline's buffer."""
+        if self.pipeline is None or self.pipeline.mic is None:
+            return None
+        buf = self.pipeline.mic.buffer
+        return buf.read_latest, (lambda: buf.total_written)

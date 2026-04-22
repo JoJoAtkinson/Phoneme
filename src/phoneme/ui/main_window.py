@@ -40,6 +40,7 @@ from ..pipeline.events import (
 from .audio_player import AudioPlayer
 from .pipeline_runner import PipelineRunner
 from .settings_dialog import SettingsDialog
+from .spectrogram_widget import SpectrogramWidget
 from .styles import APP_QSS
 from .word_display import AlignedWordView, ChipStrip
 
@@ -58,6 +59,7 @@ class MainWindow(QMainWindow):
 
         self.runner = PipelineRunner(self.settings)
         self.runner.event.connect(self._on_event)
+        self.runner.pipeline_ready.connect(self._on_pipeline_ready)
 
         self.player = AudioPlayer()
         self._tts: KokoroTTS | None = None
@@ -95,9 +97,18 @@ class MainWindow(QMainWindow):
         self.strip = ChipStrip()
         strip_wrap = QWidget()
         wrap_l = QHBoxLayout(strip_wrap)
-        wrap_l.setContentsMargins(16, 0, 16, 16)
+        wrap_l.setContentsMargins(16, 0, 16, 8)
         wrap_l.addWidget(self.strip)
         root.addWidget(strip_wrap, 1)
+
+        # Spectrogram strip (formants / vowel signatures)
+        self.spectrogram = SpectrogramWidget()
+        self.spectrogram.setVisible(self.settings.show_spectrogram)
+        spec_wrap = QWidget()
+        spec_l = QHBoxLayout(spec_wrap)
+        spec_l.setContentsMargins(16, 0, 16, 16)
+        spec_l.addWidget(self.spectrogram)
+        root.addWidget(spec_wrap)
 
         # Footer
         self._build_statusbar()
@@ -134,6 +145,12 @@ class MainWindow(QMainWindow):
         self.hold_btn.toggled.connect(self._on_hold_toggled)
         tb.addWidget(self.hold_btn)
 
+        self.spec_btn = QPushButton("Spectrogram: on")
+        self.spec_btn.setCheckable(True)
+        self.spec_btn.setChecked(self.settings.show_spectrogram)
+        self.spec_btn.toggled.connect(self._on_spectrogram_toggled)
+        tb.addWidget(self.spec_btn)
+
         tb.addSeparator()
         clear_act = QAction("Clear", self)
         clear_act.triggered.connect(self._clear_displays)
@@ -159,9 +176,16 @@ class MainWindow(QMainWindow):
         self.runner.start()
 
     def _restart_pipeline(self) -> None:
+        self.spectrogram.clear_source()
         self.runner.settings = self.settings
         self.runner.start()
         self._clear_displays()
+
+    def _on_pipeline_ready(self) -> None:
+        src = self.runner.mic_source()
+        if src is not None and self.settings.show_spectrogram:
+            read_latest, total_written = src
+            self.spectrogram.set_source(read_latest, total_written)
 
     def _on_mode_changed(self) -> None:
         new_mode = self.mode_select.currentData()
@@ -180,6 +204,19 @@ class MainWindow(QMainWindow):
         self.settings.hold_to_talk = on
         self.settings.save()
         self.hold_btn.setText(f"Hold-to-talk: {'on' if on else 'off'}")
+
+    def _on_spectrogram_toggled(self, on: bool) -> None:
+        self.settings.show_spectrogram = on
+        self.settings.save()
+        self.spec_btn.setText(f"Spectrogram: {'on' if on else 'off'}")
+        self.spectrogram.setVisible(on)
+        if on:
+            src = self.runner.mic_source()
+            if src is not None:
+                read_latest, total_written = src
+                self.spectrogram.set_source(read_latest, total_written)
+        else:
+            self.spectrogram.clear_source()
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self)
