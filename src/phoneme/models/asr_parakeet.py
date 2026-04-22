@@ -50,6 +50,7 @@ class ParakeetMLXASR:
         self, audio: np.ndarray, sample_rate: int = 16000, language: str | None = "en"
     ) -> list[WordToken]:
         self.load()
+        assert self._model is not None
         # parakeet-mlx returns a Result with .sentences[].tokens[] or similar.
         result = self._model.transcribe(audio, sampling_rate=sample_rate)
         out: list[WordToken] = []

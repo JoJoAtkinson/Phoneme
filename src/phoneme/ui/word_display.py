@@ -53,6 +53,8 @@ class AlignedWordView(QWidget):
         # Clear
         while self._row.count():
             item = self._row.takeAt(0)
+            if item is None:
+                continue
             w = item.widget()
             if w:
                 w.deleteLater()

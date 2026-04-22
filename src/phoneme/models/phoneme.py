@@ -8,6 +8,7 @@ Supports two usage patterns:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 
@@ -40,7 +41,8 @@ class Wav2Vec2PhonemeRecognizer:
         self.model_key = model_key
         self.device = device
         self._model = None
-        self._processor = None
+        self._feature_extractor = None
+        self._id_to_tok: dict[int, str] = {}
         self._frame_hop_s: float = 0.02  # Wav2Vec2 stride is 20 ms
         self._last_emitted: list[PhonemeToken] = []
 
@@ -48,11 +50,22 @@ class Wav2Vec2PhonemeRecognizer:
         if self._model is not None:
             return
         import torch
-        from transformers import AutoModelForCTC, AutoProcessor
+        from transformers import AutoModelForCTC, Wav2Vec2FeatureExtractor
 
         local = ensure_downloaded(self.model_key)
+        if local is None:
+            raise RuntimeError(
+                f"phoneme model '{self.model_key}' unavailable on this platform"
+            )
         log.info("loading phoneme model from %s", local)
-        self._processor = AutoProcessor.from_pretrained(local)
+        # Deliberately skip AutoProcessor: Wav2Vec2PhonemeCTCTokenizer's
+        # __init__ calls into phonemizer/espeak (a system binary we don't
+        # need at inference time — only for training-time G2P). We read
+        # the vocab directly and feed audio through the feature extractor.
+        self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(local)
+        with (local / "vocab.json").open() as f:
+            vocab = json.load(f)
+        self._id_to_tok = {int(v): k for k, v in vocab.items()}
         self._model = AutoModelForCTC.from_pretrained(local)
 
         if self.device is None:
@@ -83,9 +96,12 @@ class Wav2Vec2PhonemeRecognizer:
         import torch
 
         self.load()
+        assert self._model is not None and self._feature_extractor is not None
         if audio.ndim > 1:
             audio = audio[:, 0]
-        inputs = self._processor(audio, sampling_rate=sample_rate, return_tensors="pt")
+        inputs = self._feature_extractor(
+            audio, sampling_rate=sample_rate, return_tensors="pt"
+        )
         input_values = inputs.input_values.to(self.device)
         with torch.no_grad():
             logits = self._model(input_values).logits[0]  # [T, V]
@@ -95,8 +111,7 @@ class Wav2Vec2PhonemeRecognizer:
         conf = conf.cpu().numpy()
 
         blank = self._model.config.pad_token_id
-        vocab = self._processor.tokenizer.get_vocab()
-        id_to_tok = {v: k for k, v in vocab.items()}
+        id_to_tok = self._id_to_tok
 
         tokens: list[PhonemeToken] = []
         cur_id = None

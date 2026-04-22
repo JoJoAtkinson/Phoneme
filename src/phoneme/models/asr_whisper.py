@@ -47,6 +47,7 @@ class FasterWhisperASR:
         self, audio: np.ndarray, sample_rate: int = 16000, language: str | None = "en"
     ) -> list[WordToken]:
         self.load()
+        assert self._model is not None
         # faster-whisper accepts numpy directly
         segments, _ = self._model.transcribe(
             audio.astype(np.float32, copy=False),

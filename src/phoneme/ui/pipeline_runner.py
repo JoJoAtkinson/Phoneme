@@ -51,13 +51,17 @@ class PipelineRunner(QObject):
         import threading
 
         def _warmup():
-            if hasattr(self.pipeline, "warmup"):
+            pipeline = self.pipeline
+            if pipeline is None:
+                return
+            warmup = getattr(pipeline, "warmup", None)
+            if callable(warmup):
                 try:
-                    self.pipeline.warmup()
+                    warmup()
                 except Exception as e:
                     log.exception("warmup failed: %s", e)
             try:
-                self.pipeline.start()
+                pipeline.start()
                 self.pipeline_ready.emit()
             except Exception as e:
                 log.exception("pipeline start failed: %s", e)

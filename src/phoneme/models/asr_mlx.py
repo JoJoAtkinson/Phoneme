@@ -65,6 +65,7 @@ class MLXWhisperASR:
         self, audio: np.ndarray, sample_rate: int = 16000, language: str | None = "en"
     ) -> list[WordToken]:
         self.load()
+        assert self._loaded_repo is not None
         import mlx_whisper
 
         # mlx-whisper works on float32 @ 16 kHz.

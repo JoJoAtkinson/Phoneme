@@ -44,10 +44,6 @@ mac = [
     "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "parakeet-mlx>=0.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
-# Optional voice-cloning TTS (heavier, slower, better)
-voice-clone = [
-    "TTS>=0.22.0",
-]
 # Build tooling for .app bundles
 package = [
     "py2app>=0.28; sys_platform == 'darwin'",

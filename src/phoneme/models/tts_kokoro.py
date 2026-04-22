@@ -65,6 +65,7 @@ class KokoroTTS:
     def synthesize(self, text: str, language: str = "en-us") -> tuple[np.ndarray, int]:
         """Return (audio_float32_mono, sample_rate)."""
         self.load()
+        assert self._engine is not None
         samples, sr = self._engine.create(
             text, voice=self.voice, speed=self.speed, lang=language
         )
@@ -72,4 +73,5 @@ class KokoroTTS:
 
     def list_voices(self) -> list[str]:
         self.load()
+        assert self._engine is not None
         return sorted(self._engine.get_voices())

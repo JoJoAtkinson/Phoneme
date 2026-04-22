@@ -100,6 +100,7 @@ class StreamingVAD:
     def feed(self, samples: np.ndarray) -> None:
         """Feed an arbitrary-length slice of float32 audio @ 16 kHz."""
         self._lazy_load()
+        assert self._model is not None
         import torch
 
         if samples.dtype != np.float32:
