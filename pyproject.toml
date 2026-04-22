@@ -1,0 +1,82 @@
+[project]
+name = "phoneme"
+version = "0.1.0"
+description = "Real-time phoneme visualizer and speech echo for pronunciation learning"
+requires-python = ">=3.11,<3.13"
+readme = { text = "Phoneme — real-time phoneme visualizer for Mac.", content-type = "text/plain" }
+authors = [{ name = "Phoneme" }]
+license = { text = "MIT" }
+
+dependencies = [
+    # UI
+    "PySide6>=6.8",
+    # Audio I/O
+    "sounddevice>=0.5.0",
+    "soundfile>=0.12.1",
+    "numpy>=1.26,<2.3",
+    "scipy>=1.11",
+    # ML core (torch/MPS on Mac)
+    "torch>=2.4",
+    "torchaudio>=2.4",
+    "transformers>=4.44",
+    "huggingface-hub>=0.25",
+    # Streaming VAD
+    "silero-vad>=5.1",
+    "onnxruntime>=1.19",
+    # ASR (cross-platform default)
+    "faster-whisper>=1.0.3",
+    # TTS default (Apache 2.0, fast, speaker-fixed)
+    "kokoro-onnx>=0.4.0",
+    # Grapheme-to-phoneme for target-word mode + reverse phoneme lookup
+    "phonemizer-fork>=3.3.0",
+    # CMU pronouncing dict for phoneme-compression word lookup
+    "cmudict>=1.0.20",
+    # App support
+    "platformdirs>=4.3",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# Apple Silicon accelerators (skip on Linux/Intel)
+mac = [
+    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "parakeet-mlx>=0.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+# Optional voice-cloning TTS (heavier, slower, better)
+voice-clone = [
+    "TTS>=0.22.0",
+]
+# Build tooling for .app bundles
+package = [
+    "py2app>=0.28; sys_platform == 'darwin'",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+phoneme = "phoneme.__main__:main"
+phoneme-download = "phoneme.models.downloader:main"
+phoneme-check = "phoneme.scripts.check_hf:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phoneme"]
+
+[tool.uv]
+# Let uv resolve everything
+managed = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]

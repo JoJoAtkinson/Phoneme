@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+.env
+
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# py2app / packaging
+*.app/
+Phoneme.app/
+Phoneme.dmg
+
+# Model cache (downloaded lazily at runtime)
+models/
+.cache/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
