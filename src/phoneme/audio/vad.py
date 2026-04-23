@@ -133,6 +133,12 @@ class StreamingVAD:
                         tail = min(len(full), self._silence_run - int(self.sample_rate * 0.1))
                         if tail > 0:
                             full = full[:-tail] if tail < len(full) else full
+                        log.info(
+                            "[VAD] speech_end prob=%.2f speech=%dms silence=%dms utt=%dms",
+                            prob, self._speech_run * 1000 // self.sample_rate,
+                            self._silence_run * 1000 // self.sample_rate,
+                            len(full) * 1000 // self.sample_rate,
+                        )
                         if self.on_speech_end is not None:
                             self.on_speech_end(full)
                     self._in_speech = False
@@ -145,13 +151,21 @@ class StreamingVAD:
                 self._utterance_buffer = [chunk]
                 self._silence_run = 0
                 self._speech_run = self.CHUNK
+                log.info("[VAD] speech_start prob=%.2f threshold=%.2f", prob, self.threshold)
                 if self.on_speech_start is not None:
                     self.on_speech_start()
 
     def force_end(self) -> None:
         """Manually end the current utterance (e.g. user released hold-to-talk)."""
+        log.info(
+            "[VAD] force_end in_speech=%s buffered_chunks=%d",
+            self._in_speech, len(self._utterance_buffer),
+        )
         if self._in_speech and self._utterance_buffer:
             full = np.concatenate(self._utterance_buffer)
             if len(full) >= self.min_speech_samples and self.on_speech_end is not None:
+                log.info("[VAD] force_end emitting utt=%dms", len(full) * 1000 // self.sample_rate)
                 self.on_speech_end(full)
+            else:
+                log.info("[VAD] force_end dropped: len=%d < min_speech=%d", len(full), self.min_speech_samples)
         self.reset()

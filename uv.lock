@@ -1077,7 +1077,7 @@ requires-dist = [
     { name = "cmudict", specifier = ">=1.0.20" },
     { name = "faster-whisper", specifier = ">=1.0.3" },
     { name = "huggingface-hub", specifier = ">=0.25" },
-    { name = "kokoro-onnx", specifier = ">=0.4.0" },
+    { name = "kokoro-onnx", specifier = ">=0.5.0" },
     { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mac'", specifier = ">=0.4" },
     { name = "numpy", specifier = ">=1.26,<2.3" },
     { name = "onnxruntime", specifier = ">=1.19" },

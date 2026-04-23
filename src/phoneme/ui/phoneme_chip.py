@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from ..data.ipa import articulation_hint, color_for, vowel_length_marker
+from ..data.ipa import articulation_hint, color_for, is_vowel, simple_label
 
 
 class PhonemeChip(QWidget):
@@ -23,7 +23,10 @@ class PhonemeChip(QWidget):
         self.duration_s = duration_s
         self.confidence = max(0.0, min(1.0, confidence))
         self.word_below = word_below
-        self.setMinimumSize(60, 80)
+        # Fixed chip size — without this, a single chip inside a stretchy
+        # parent layout balloons to fill all available space.
+        self.setFixedSize(72, 96)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setToolTip(self._tooltip())
 
@@ -66,16 +69,15 @@ class PhonemeChip(QWidget):
         p.setPen(pen)
         p.drawPath(path)
 
-        # IPA glyph
+        # Elementary-school glyph (ā, ĕ, sh, th, ...). The raw IPA still
+        # lives in the tooltip for anyone who wants it.
         p.setPen(QColor("#0e1116"))
         font = QFont()
-        font.setPointSize(20)
+        font.setPointSize(22 if not is_vowel(self.ipa) else 24)
         font.setBold(True)
         font.setFamily("Helvetica Neue")
         p.setFont(font)
-        marker = vowel_length_marker(self.ipa, self.duration_s) or ""
-        label = f"{marker}{self.ipa}" if marker else self.ipa
-        p.drawText(chip, Qt.AlignmentFlag.AlignCenter, label)
+        p.drawText(chip, Qt.AlignmentFlag.AlignCenter, simple_label(self.ipa))
 
         # Word below
         if self.word_below:

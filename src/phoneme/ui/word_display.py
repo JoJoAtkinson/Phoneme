@@ -45,6 +45,7 @@ class AlignedWordView(QWidget):
         self._row = QHBoxLayout(self)
         self._row.setContentsMargins(12, 8, 12, 8)
         self._row.setSpacing(18)
+        self._row.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._row.addStretch(1)
 
     def show_transcription(

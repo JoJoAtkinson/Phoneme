@@ -19,6 +19,18 @@ from .downloader import ensure_downloaded
 
 log = logging.getLogger(__name__)
 
+# Non-phoneme vocab entries across the wav2vec2 phoneme models we support.
+# Different checkpoints use different conventions (HF-style <pad>/<unk>,
+# BERT-style [PAD]/[UNK], "|" for word boundary, prosody marks from espeak-
+# derived tokenizers). We drop these so the chip strip only shows actual
+# phonemes — stress markers aren't sounds, they're metadata on the next vowel.
+_NON_PHONEME_TOKENS = {
+    "|",
+    "<pad>", "<s>", "</s>", "<unk>",
+    "[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]",
+    "ˈ", "ˌ",  # primary / secondary stress
+}
+
 
 @dataclass
 class PhonemeToken:
@@ -75,11 +87,13 @@ class Wav2Vec2PhonemeRecognizer:
         # reductions in fp16, so we stay fp32.
         self._model.to(self.device)
         self._model.eval()
-        # Warm the compute graph with a tiny dummy pass to hide first-frame
-        # latency (MPS compiles kernels on first execution).
+        # Warm the compute graph with a dummy pass at the real streaming
+        # window size (720 ms @ 16 kHz = 11520 samples). MPS compiles a new
+        # Metal kernel per distinct input shape, so warming at a mismatched
+        # size would leave first-real-frame latency elevated.
         try:
             with torch.no_grad():
-                warm = torch.zeros(1, 1600, device=self.device)
+                warm = torch.zeros(1, 11520, device=self.device)
                 self._model(warm)
         except Exception as e:
             log.debug("phoneme warmup skipped: %s", e)
@@ -99,6 +113,14 @@ class Wav2Vec2PhonemeRecognizer:
         assert self._model is not None and self._feature_extractor is not None
         if audio.ndim > 1:
             audio = audio[:, 0]
+        # Pad short utterances with silence on both sides so the model has
+        # acoustic context around the word. Wav2Vec2 was trained on clips
+        # that had leading/trailing silence; feeding a tight 400 ms word with
+        # no padding destabilizes the CTC decoder (it sees a transient
+        # onset/offset the training data never had). 200 ms each side.
+        min_padded = int(sample_rate * 0.2)
+        pad = np.zeros(min_padded, dtype=np.float32)
+        audio = np.concatenate([pad, audio.astype(np.float32, copy=False), pad])
         inputs = self._feature_extractor(
             audio, sampling_rate=sample_rate, return_tensors="pt"
         )
@@ -113,20 +135,33 @@ class Wav2Vec2PhonemeRecognizer:
         blank = self._model.config.pad_token_id
         id_to_tok = self._id_to_tok
 
+        # For diagnostics: record every segment the model predicted — before
+        # the confidence filter — so we can see which phonemes got dropped.
+        all_segments: list[tuple[str, float]] = []  # (ipa, avg_confidence)
         tokens: list[PhonemeToken] = []
         cur_id = None
         cur_start = 0
         cur_confs: list[float] = []
+        from ..data.ipa import normalize_to_english
+
+        def _emit(cur_id_: int, cur_start_: int, end_t: int, cur_confs_: list[float]) -> None:
+            raw = id_to_tok.get(int(cur_id_), "")
+            if not raw or raw in _NON_PHONEME_TOKENS:
+                return
+            ipa = normalize_to_english(raw)
+            if not ipa or ipa in _NON_PHONEME_TOKENS:
+                return
+            start = cur_start_ * self._frame_hop_s
+            end = end_t * self._frame_hop_s
+            c = float(np.mean(cur_confs_)) if cur_confs_ else 0.0
+            all_segments.append((ipa, c))
+            if c >= min_confidence:
+                tokens.append(PhonemeToken(ipa, start, end, c))
+
         for t, tok_id in enumerate(ids):
             if tok_id != cur_id:
                 if cur_id is not None and cur_id != blank:
-                    ipa = id_to_tok.get(int(cur_id), "")
-                    if ipa and ipa not in {"|", "<pad>", "<s>", "</s>", "<unk>"}:
-                        start = cur_start * self._frame_hop_s
-                        end = t * self._frame_hop_s
-                        c = float(np.mean(cur_confs)) if cur_confs else 0.0
-                        if c >= min_confidence:
-                            tokens.append(PhonemeToken(ipa, start, end, c))
+                    _emit(cur_id, cur_start, t, cur_confs)
                 cur_id = int(tok_id)
                 cur_start = t
                 cur_confs = [float(conf[t])]
@@ -134,16 +169,23 @@ class Wav2Vec2PhonemeRecognizer:
                 cur_confs.append(float(conf[t]))
         # flush
         if cur_id is not None and cur_id != blank:
-            ipa = id_to_tok.get(int(cur_id), "")
-            if ipa and ipa not in {"|", "<pad>", "<s>", "</s>", "<unk>"}:
-                start = cur_start * self._frame_hop_s
-                end = len(ids) * self._frame_hop_s
-                c = float(np.mean(cur_confs)) if cur_confs else 0.0
-                if c >= min_confidence:
-                    tokens.append(PhonemeToken(ipa, start, end, c))
+            _emit(cur_id, cur_start, len(ids), cur_confs)
 
         if merge_repeats:
             tokens = _merge_repeats(tokens)
+
+        # Diagnostic: log every segment the model predicted plus the subset
+        # that cleared the confidence filter. If "kept" is much shorter than
+        # "all" on your real-mic holds, the filter is what's dropping chips —
+        # lower phoneme_min_confidence in settings. If "all" itself is tiny,
+        # the model isn't picking up the acoustic content (mic gain, noise).
+        log.info(
+            "[PHONEME] all(%d)=%s kept(%d)=%s",
+            len(all_segments),
+            [(s, round(c, 2)) for s, c in all_segments],
+            len(tokens),
+            [(t.ipa, round(t.confidence, 2)) for t in tokens],
+        )
         return tokens
 
     def stream_step(

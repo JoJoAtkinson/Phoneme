@@ -8,6 +8,7 @@ into a queued Qt signal, ensuring delivery on the main thread.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
@@ -23,16 +24,18 @@ log = logging.getLogger(__name__)
 
 
 def build_pipeline(settings: Settings, emit) -> Pipeline:
-    mode = settings.pipeline_mode
-    if mode is PipelineMode.STREAMING:
+    # Coerce whatever came out of settings (may be a plain str after a YAML
+    # roundtrip) to the enum so identity/equality comparisons work.
+    mode = PipelineMode(settings.pipeline_mode)
+    if mode == PipelineMode.STREAMING:
         return StreamingPipeline(settings, emit)
-    if mode is PipelineMode.UTTERANCE:
+    if mode == PipelineMode.UTTERANCE:
         return UtterancePipeline(settings, emit)
-    if mode is PipelineMode.ALIGNED:
+    if mode == PipelineMode.ALIGNED:
         return AlignedPipeline(settings, emit)
-    if mode is PipelineMode.COMPRESS:
+    if mode == PipelineMode.COMPRESS:
         return CompressPipeline(settings, emit)
-    raise ValueError(f"Unknown pipeline mode: {mode}")
+    raise ValueError(f"Unknown pipeline mode: {mode!r}")
 
 
 class PipelineRunner(QObject):
@@ -77,8 +80,19 @@ class PipelineRunner(QObject):
             self.pipeline = None
 
     def force_endpoint(self) -> None:
+        # force_endpoint_now runs the VAD flush + ASR/phoneme inference on
+        # the calling thread. When triggered by a Qt key-release, that
+        # calling thread is the main thread — blocking it for the 1-2 s
+        # Whisper pass freezes the UI. Dispatch to a worker.
         if self.pipeline is not None:
-            self.pipeline.force_endpoint_now()
+            pipeline = self.pipeline
+            threading.Thread(
+                target=pipeline.force_endpoint_now, name="force-endpoint", daemon=True
+            ).start()
+
+    def set_paused(self, paused: bool) -> None:
+        if self.pipeline is not None:
+            self.pipeline.set_paused(paused)
 
     def _emit(self, event: Any) -> None:
         # Qt.QueuedConnection for cross-thread signal delivery is automatic

@@ -65,6 +65,12 @@ class MainWindow(QMainWindow):
         self._tts: KokoroTTS | None = None
 
         self._hold_active = False
+        # Stays True briefly after space-release so the final utterance
+        # (Transcription / UtteranceEnded) still renders in hold-to-talk mode.
+        self._hold_finalizing = False
+        self._hold_finalize_timer = QTimer(self)
+        self._hold_finalize_timer.setSingleShot(True)
+        self._hold_finalize_timer.timeout.connect(self._clear_finalizing)
 
         central = QWidget()
         central.setObjectName("Central")
@@ -75,31 +81,27 @@ class MainWindow(QMainWindow):
 
         self._build_toolbar()
 
-        # Word + live caption
-        header = QWidget()
-        header_l = QVBoxLayout(header)
-        header_l.setContentsMargins(16, 8, 16, 0)
-        header_l.setSpacing(2)
-        self.word_label = QLabel("—")
-        self.word_label.setObjectName("WordLabel")
-        header_l.addWidget(self.word_label)
+        # Prompt line — shown when there's nothing to display yet. Hidden
+        # once the first transcription lands.
+        self.prompt_label = QLabel("Hold Space to speak")
+        self.prompt_label.setObjectName("LiveCaption")
+        self.prompt_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.prompt_label)
 
-        self.live_caption = QLabel("Press and hold Space to speak")
-        self.live_caption.setObjectName("LiveCaption")
-        header_l.addWidget(self.live_caption)
-        root.addWidget(header)
-
-        # Aligned view (appears after utterance end)
+        # Aligned view is the primary display: each spoken word as a column
+        # with its phoneme chips underneath. Grows to fill available space.
         self.aligned_view = AlignedWordView()
-        root.addWidget(self.aligned_view)
+        root.addWidget(self.aligned_view, 1)
 
-        # Streaming chip strip
+        # Streaming chip strip for live phoneme feedback during a hold.
+        # Hidden when empty so it doesn't show as a gray dead zone.
         self.strip = ChipStrip()
-        strip_wrap = QWidget()
-        wrap_l = QHBoxLayout(strip_wrap)
+        self.strip_wrap = QWidget()
+        wrap_l = QHBoxLayout(self.strip_wrap)
         wrap_l.setContentsMargins(16, 0, 16, 8)
         wrap_l.addWidget(self.strip)
-        root.addWidget(strip_wrap, 1)
+        self.strip_wrap.setVisible(False)
+        root.addWidget(self.strip_wrap)
 
         # Spectrogram strip (formants / vowel signatures)
         self.spectrogram = SpectrogramWidget()
@@ -230,46 +232,83 @@ class MainWindow(QMainWindow):
 
     def _clear_displays(self) -> None:
         self.strip.clear()
+        self.strip_wrap.setVisible(False)
         self.aligned_view.show_transcription([], [], [])
-        self.word_label.setText("—")
+        self.prompt_label.setVisible(True)
 
     # ---- events from pipeline -----------------------------------------
 
     def _on_event(self, ev: Any) -> None:
+        log.info(
+            "[UI] event %s hold=%s finalizing=%s",
+            type(ev).__name__, self._hold_active, self._hold_finalizing,
+        )
+        # In hold-to-talk mode the pipeline/VAD still runs continuously, but
+        # we only want to render events that belong to a hold. Let EchoAudio
+        # through unconditionally (echo may resolve after release).
+        if (
+            self.settings.hold_to_talk
+            and not self._hold_active
+            and not self._hold_finalizing
+        ):
+            if isinstance(ev, EchoAudio):
+                self.player.play(ev.audio, ev.sample_rate)
+            return
+
         if isinstance(ev, UtteranceStarted):
             self.hold_hint.setText("● listening")
             self.hold_hint.setProperty("active", "true")
             self.hold_hint.style().unpolish(self.hold_hint)
             self.hold_hint.style().polish(self.hold_hint)
-            self.live_caption.setText("listening…")
             if self.settings.pipeline_mode in {PipelineMode.STREAMING, PipelineMode.ALIGNED}:
                 self.strip.clear()
 
         elif isinstance(ev, PartialPhonemes):
-            for tok in ev.tokens:
-                self.strip.append(tok)
-            seq = "".join(t.ipa for t in ev.tokens)
-            if seq:
-                self.live_caption.setText(f"{self.live_caption.text()} {seq}".strip())
+            # Only show streaming chips in STREAMING mode. In ALIGNED/etc.
+            # the user prefers accuracy over real-time preview — we wait
+            # for the final Transcription and render the aligned view.
+            if self.settings.pipeline_mode == PipelineMode.STREAMING:
+                for tok in ev.tokens:
+                    self.strip.append(tok)
+                self.strip_wrap.setVisible(True)
 
         elif isinstance(ev, UtteranceEnded):
+            # Don't declare idle yet — Transcription may still be in flight.
+            pass
+
+        elif isinstance(ev, Transcription):
             self.hold_hint.setText("● idle")
             self.hold_hint.setProperty("active", "false")
             self.hold_hint.style().unpolish(self.hold_hint)
             self.hold_hint.style().polish(self.hold_hint)
-
-        elif isinstance(ev, Transcription):
-            self.word_label.setText(ev.text or "—")
-            self.live_caption.setText(" ".join(p.ipa for p in ev.phonemes))
-            self.aligned_view.show_transcription(ev.words, ev.phonemes, ev.phoneme_groups)
+            self.prompt_label.setVisible(False)
+            # Only replace the visible display when we actually have content.
+            # An empty transcription (VAD swallowed the audio, ASR returned
+            # nothing) shouldn't wipe the previous result — that's what makes
+            # "symbols go away on release".
+            if ev.words and ev.phonemes:
+                self.strip.clear()
+                self.strip_wrap.setVisible(False)
+                self.aligned_view.show_transcription(ev.words, ev.phonemes, ev.phoneme_groups)
+            elif ev.words:
+                # Got words but no phonemes cleared the filter. Still show
+                # the words so the user sees they were heard.
+                self.strip.clear()
+                self.strip_wrap.setVisible(False)
+                self.aligned_view.show_transcription(ev.words, [], [[] for _ in ev.words])
             if self.settings.echo_after_utterance and ev.text.strip():
                 self._speak_echo(ev.text)
 
         elif isinstance(ev, CompressedWord):
-            joined = " ".join(ev.phonemes)
-            candidates = ", ".join(ev.candidates[:5]) if ev.candidates else "(no match)"
-            self.word_label.setText(candidates.split(",")[0].strip() or "—")
-            self.live_caption.setText(f"/{joined}/  →  {candidates}")
+            # Compress mode: render the best candidate as a single "word"
+            # with the phoneme sequence beneath it.
+            best = (ev.candidates[0] if ev.candidates else ev.phonemes and " ".join(ev.phonemes)) or "?"
+            fake_word = type("W", (), {"text": best})()
+            from ..models.phoneme import PhonemeToken
+
+            phs = [PhonemeToken(ipa=p, start_s=0.0, end_s=0.0, confidence=1.0) for p in ev.phonemes]
+            self.aligned_view.show_transcription([fake_word], phs, [list(range(len(phs)))])
+            self.prompt_label.setVisible(False)
 
         elif isinstance(ev, EchoAudio):
             self.player.play(ev.audio, ev.sample_rate)
@@ -299,20 +338,58 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self.settings.hold_to_talk and event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._hold_active = True
-            self.hold_hint.setText("● HOLDING — speak")
-            self.hold_hint.setProperty("active", "true")
-            self.hold_hint.style().unpolish(self.hold_hint)
-            self.hold_hint.style().polish(self.hold_hint)
+            self._start_hold()
             return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if self.settings.hold_to_talk and event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._hold_active = False
-            self.runner.force_endpoint()
+            self._end_hold()
             return
         super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        # If the user switches apps while holding space, macOS never delivers
+        # the release — clear the hold state so the app doesn't get stuck.
+        if self._hold_active:
+            self._end_hold()
+        super().focusOutEvent(event)
+
+    def _start_hold(self) -> None:
+        log.info("[HOLD] start")
+        self._hold_active = True
+        self._hold_finalizing = False
+        self._hold_finalize_timer.stop()
+        self.hold_hint.setText("● HOLDING — speak")
+        self.hold_hint.setProperty("active", "true")
+        self.hold_hint.style().unpolish(self.hold_hint)
+        self.hold_hint.style().polish(self.hold_hint)
+        self.prompt_label.setVisible(False)
+        # Intentionally DO NOT clear the previous transcription here — the
+        # user wants their last result to stay visible until the new one
+        # replaces it, not flicker to blank during every press.
+        self.runner.set_paused(False)
+
+    def _end_hold(self) -> None:
+        log.info("[HOLD] end")
+        self._hold_active = False
+        # "processing…" until the Transcription event lands (or the 2 s
+        # finalize window expires). Avoids the misleading "idle" blink.
+        self.hold_hint.setText("◐ processing…")
+        self.hold_hint.setProperty("active", "false")
+        self.hold_hint.style().unpolish(self.hold_hint)
+        self.hold_hint.style().polish(self.hold_hint)
+        # Keep the event gate open briefly so the final Transcription still
+        # renders after force_endpoint flushes the utterance.
+        self._hold_finalizing = True
+        self._hold_finalize_timer.start(2000)
+        self.runner.force_endpoint()
+        # Re-pause after the finalize window; the force_endpoint above will
+        # already have flushed the utterance through the VAD.
+        self.runner.set_paused(True)
+
+    def _clear_finalizing(self) -> None:
+        self._hold_finalizing = False
 
     # ---- lifecycle -----------------------------------------------------
 

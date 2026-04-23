@@ -26,8 +26,15 @@ class WordToken:
 
 
 class MLXWhisperASR:
-    # Map generic Whisper sizes to mlx-community repos.
+    # Map generic Whisper sizes to mlx-community repos. Default to English-only
+    # (.en-mlx) checkpoints where available — smaller and more accurate on
+    # English than the same-size multilingual models. Large-v3 is multilingual
+    # only (no .en variant exists upstream).
     SIZE_TO_REPO = {
+        "tiny.en": "mlx-community/whisper-tiny.en-mlx",
+        "base.en": "mlx-community/whisper-base.en-mlx",
+        "small.en": "mlx-community/whisper-small.en-mlx",
+        "medium.en": "mlx-community/whisper-medium.en-mlx",
         "tiny": "mlx-community/whisper-tiny-mlx",
         "base": "mlx-community/whisper-base-mlx",
         "small": "mlx-community/whisper-small-mlx",
@@ -57,7 +64,7 @@ class MLXWhisperASR:
                 "Install with: uv sync --extra mac"
             )
         self._loaded_repo = self.SIZE_TO_REPO.get(
-            self.model_size, self.SIZE_TO_REPO["small"]
+            self.model_size, self.SIZE_TO_REPO["small.en"]
         )
         log.info("mlx-whisper will use %s", self._loaded_repo)
 

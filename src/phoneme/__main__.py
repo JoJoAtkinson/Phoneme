@@ -7,21 +7,46 @@ import sys
 
 
 def _probe_microphone() -> None:
-    """Briefly open an input stream so macOS/TCC surfaces the mic permission
-    prompt at launch, rather than silently when the pipeline later tries to
-    record. On Linux/Windows this is a harmless no-op open+close."""
-    try:
-        import sounddevice as sd
+    """Force macOS/TCC to surface the mic permission prompt at launch.
 
-        with sd.InputStream(channels=1, samplerate=16000, blocksize=256):
-            pass
-    except Exception as e:
-        logging.getLogger("phoneme").warning(
-            "mic permission probe failed (%s). The app will retry when the "
-            "pipeline starts; if no prompt appears, grant Microphone access "
-            "to your terminal/IDE in System Settings → Privacy & Security.",
-            e,
-        )
+    Just opening an InputStream isn't enough — PortAudio's Audio Unit
+    doesn't request samples from CoreAudio until something consumes data,
+    so TCC stays quiet until the real pipeline's callback fires later.
+    We install a real callback and actively read one buffer, which is what
+    actually triggers the prompt.
+
+    Runs in a daemon thread so a denial or delayed user response doesn't
+    block the Qt startup path. No-op / harmless open+close on other OSes."""
+    import threading
+
+    def _probe():
+        try:
+            import sounddevice as sd
+
+            stream = sd.InputStream(
+                channels=1,
+                samplerate=16000,
+                blocksize=256,
+                dtype="float32",
+                callback=lambda *_args: None,  # real callback → real input I/O
+            )
+            stream.start()
+            # Hold the stream open briefly so CoreAudio actually delivers
+            # a sample buffer (which is what fires the TCC prompt).
+            import time
+
+            time.sleep(0.2)
+            stream.stop()
+            stream.close()
+        except Exception as e:
+            logging.getLogger("phoneme").warning(
+                "mic permission probe failed (%s). If no prompt appears, "
+                "grant Microphone access to your terminal/IDE in System "
+                "Settings → Privacy & Security.",
+                e,
+            )
+
+    threading.Thread(target=_probe, name="mic-probe", daemon=True).start()
 
 
 def main() -> int:
@@ -37,13 +62,13 @@ def main() -> int:
 
     from .ui.main_window import MainWindow
 
+    # Kick off the mic probe before QApplication so CoreAudio has a head
+    # start — by the time the window paints, TCC should already be asking.
+    _probe_microphone()
+
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Phoneme")
     app.setOrganizationName("Phoneme")
-
-    # Ask for mic permission before showing the UI so the OS dialog appears
-    # immediately on first launch.
-    _probe_microphone()
 
     win = MainWindow()
     win.show()

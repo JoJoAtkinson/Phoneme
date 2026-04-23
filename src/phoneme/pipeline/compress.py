@@ -31,6 +31,7 @@ class CompressPipeline(Pipeline):
     def __init__(self, settings, emit):
         super().__init__(settings, emit)
         self._phonemes = Wav2Vec2PhonemeRecognizer(
+            model_key=settings.phoneme_model.catalog_key(),
             device=torch_device() if settings.prefer_mps else "cpu",
         )
         self._buffer: list[str] = []

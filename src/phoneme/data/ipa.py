@@ -119,3 +119,96 @@ ARTICULATION = {
 def articulation_hint(ipa: str) -> str:
     base = ipa.translate(_STRIP).rstrip("ː")
     return ARTICULATION.get(base, "")
+
+
+# Multilingual espeak-trained wav2vec2 models emit tokens outside the English
+# phoneme set: Mandarin tone numbers ("iɛ5", "ə1"), French nasals ("ɑ̃"),
+# other-language consonants ("ʁ", "β", "ɣ"). On ambiguous English audio the
+# model sometimes prefers these variants over the plain English equivalent,
+# which shows up in the UI as mysterious "chinese tone 5" chips. Normalize
+# these down to their nearest English phoneme before display.
+_NON_ENGLISH_TO_ENGLISH = {
+    "ʁ": "ɹ",     # French/German R → English r
+    "r":  "ɹ",    # alveolar trill → approximant r (most English speakers)
+    "ɾ": "ɾ",     # flap (keep — valid English "butter" allophone)
+    "ɑ̃": "ɑ",     # French nasal a → a
+    "ɔ̃": "ɔ",     # French nasal ɔ → ɔ
+    "β": "v",     # Spanish β → closest English consonant
+    "ɣ": "ɡ",     # voiced velar fricative → g
+    "ç": "h",     # palatal fricative → h (as in "huge")
+    "ɐ": "ə",     # near-open → schwa (often interchangeable)
+    "ᵻ": "ɪ",     # unstressed barred-i → ɪ
+    "i.5": "i",
+    "i̪5": "i",
+    "i̪": "i",
+}
+
+
+def normalize_to_english(ipa: str) -> str:
+    """Map a potentially non-English IPA token to its closest English phoneme.
+
+    Strips Mandarin tone numbers (digits 1-9), remaps French/German/Spanish
+    consonants to their English counterparts. Returns the normalized token;
+    caller can then decide whether to keep or drop it (empty string means
+    the token was non-phonetic / should be dropped)."""
+    if not ipa:
+        return ipa
+    # Strip trailing tone digits (Mandarin/Cantonese/Vietnamese markers).
+    stripped = ipa.rstrip("0123456789")
+    if stripped != ipa:
+        ipa = stripped
+    # Direct remaps for whole-token non-English forms.
+    if ipa in _NON_ENGLISH_TO_ENGLISH:
+        return _NON_ENGLISH_TO_ENGLISH[ipa]
+    return ipa
+
+
+# Elementary-school style labels. Legible to anyone who learned phonics in
+# primary school — uses macron (ā ē ī ō ū) for long vowels and breve
+# (ă ĕ ĭ ŏ ŭ) for short, plus common digraphs (sh, ch, th, ng). The chip
+# widget shows this as the main glyph; the raw IPA stays in the tooltip.
+SIMPLE_LABEL = {
+    # ---- vowels ------------------------------------------------------
+    # long vowels and diphthongs
+    "i":  "ē",  "iː": "ē",
+    "u":  "ū",  "uː": "ū",
+    "eɪ": "ā",
+    "aɪ": "ī",
+    "oʊ": "ō",  "əʊ": "ō",
+    # short vowels
+    "ɛ":  "ĕ",
+    "ɪ":  "ĭ",
+    "æ":  "ă",
+    "ʌ":  "ŭ",
+    "ə":  "ə",       # schwa — keep distinct; common and worth learning
+    "ʊ":  "oo",      # book-style short oo
+    "ɑ":  "ŏ",  "ɑː": "ŏ",
+    "ɒ":  "ŏ",
+    "ɔ":  "aw", "ɔː": "aw",
+    # other diphthongs / r-colored
+    "aʊ": "ow",
+    "ɔɪ": "oy",
+    "ɚ":  "ər",
+    "ɝ":  "ər",
+    # ---- consonants --------------------------------------------------
+    "b": "b", "d": "d", "f": "f", "g": "g", "ɡ": "g",
+    "h": "h", "k": "k", "l": "l", "m": "m", "n": "n",
+    "p": "p", "s": "s", "t": "t", "v": "v", "w": "w",
+    "z": "z",
+    "j": "y",        # IPA /j/ is English "y" sound, not the "j" in "jump"
+    "ɹ": "r", "r": "r",
+    "ŋ": "ng",
+    "ʃ": "sh", "ʒ": "zh",
+    "θ": "th", "ð": "th",  # English spelling doesn't distinguish voicing
+    "tʃ": "ch",
+    "dʒ": "j", "d͡ʒ": "j",  # the consonant in "jump"
+    "ɾ": "t",        # flap t (as in "butter") — show as plain t for kids
+}
+
+
+def simple_label(ipa: str) -> str:
+    """Return an elementary-school-style label for an IPA phoneme.
+
+    Falls back to the raw IPA when we don't have a mapping — so rare
+    phonemes still render, just in their IPA form."""
+    return SIMPLE_LABEL.get(ipa.translate(_STRIP), ipa)

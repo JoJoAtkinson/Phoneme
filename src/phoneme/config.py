@@ -35,6 +35,15 @@ class TTSBackend(str, Enum):
 class PhonemeModel(str, Enum):
     WAV2VEC2_ESPEAK = "facebook/wav2vec2-lv-60-espeak-cv-ft"
     WAV2VEC2_GRUUT_EN = "bookbot/wav2vec2-ljspeech-gruut"
+    WAV2VEC2_SPEECH31_EN = "speech31/wav2vec2-large-english-phoneme-v2"
+
+    def catalog_key(self) -> str:
+        """Map the HF repo id (stored in settings) to its downloader catalog key."""
+        return {
+            PhonemeModel.WAV2VEC2_ESPEAK: "phoneme/wav2vec2-espeak",
+            PhonemeModel.WAV2VEC2_GRUUT_EN: "phoneme/wav2vec2-gruut-en",
+            PhonemeModel.WAV2VEC2_SPEECH31_EN: "phoneme/wav2vec2-speech31-en",
+        }[self]
 
 
 class Settings(BaseModel):
@@ -52,17 +61,29 @@ class Settings(BaseModel):
     # Pipeline
     pipeline_mode: PipelineMode = PipelineMode.ALIGNED
 
-    # Phoneme model
+    # Phoneme model. facebook/wav2vec2-lv-60-espeak-cv-ft is multilingual
+    # but the IPA it emits is the same symbol set English uses, and its
+    # CommonVoice training data (thousands of real mics, noisy environments)
+    # makes it far more robust to real-world input than the studio-trained
+    # "English-only" alternatives. The other options in the enum are kept
+    # for experimentation but tend to fold to garbage on laptop-mic audio.
     phoneme_model: PhonemeModel = PhonemeModel.WAV2VEC2_ESPEAK
-    phoneme_window_ms: int = 480  # rolling window for streaming mode
+    phoneme_window_ms: int = 720  # rolling window for streaming mode (longer = more context = more accurate)
     phoneme_hop_ms: int = 160
-    phoneme_min_confidence: float = 0.35
+    # Permissive threshold: short/soft real-world utterances produce phonemes
+    # with per-token confidence in the 0.2-0.5 range. Filtering at 0.35 silently
+    # drops nearly everything on single-word holds ("hi", "no", "why"). 0.15
+    # keeps the obvious junk out while letting legitimate-but-uncertain phonemes
+    # render so the user sees what the model heard.
+    phoneme_min_confidence: float = 0.15
     merge_repeats: bool = True
     mark_long_short_vowels: bool = True  # render ˙/¯ based on duration
 
     # ASR
     asr_backend: ASRBackend = ASRBackend.FASTER_WHISPER
-    whisper_model_size: str = "small"  # tiny, base, small, medium, large-v3
+    # English-only Whisper by default: .en checkpoints are smaller and more
+    # accurate on English than the same-size multilingual models.
+    whisper_model_size: str = "small.en"  # tiny.en, base.en, small.en, medium.en, small, large-v3
     parakeet_model: str = "mlx-community/parakeet-tdt-0.6b-v2"
 
     # TTS

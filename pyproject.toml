@@ -26,7 +26,7 @@ dependencies = [
     # ASR (cross-platform default)
     "faster-whisper>=1.0.3",
     # TTS default (Apache 2.0, fast, speaker-fixed)
-    "kokoro-onnx>=0.4.0",
+    "kokoro-onnx>=0.5.0",
     # Grapheme-to-phoneme for target-word mode + reverse phoneme lookup
     "phonemizer-fork>=3.3.0",
     # CMU pronouncing dict for phoneme-compression word lookup

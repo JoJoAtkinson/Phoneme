@@ -40,8 +40,14 @@ class MicCapture:
         mono = indata[:, 0] if indata.ndim > 1 else indata
         mono = mono.astype(np.float32, copy=False)
         self.buffer.write(mono)
+        rms = float(np.sqrt(np.mean(mono * mono) + 1e-12))
+        # Sample-rate is ~31 callbacks/sec at block_ms=32; log every ~2 s so we
+        # can confirm mic input is live without flooding the console. Tag with
+        # [MIC] for easy grepping.
+        self._cb_count = getattr(self, "_cb_count", 0) + 1
+        if self._cb_count % 60 == 0:
+            log.info("[MIC] rms=%.4f total_written=%d cb#%d", rms, self.buffer.total_written, self._cb_count)
         if self._on_level is not None:
-            rms = float(np.sqrt(np.mean(mono * mono) + 1e-12))
             self._on_level(rms)
 
     def start(self) -> None:

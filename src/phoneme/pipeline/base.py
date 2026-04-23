@@ -32,6 +32,26 @@ class Pipeline:
         self._drain_thread: threading.Thread | None = None
         self._stream_thread: threading.Thread | None = None
         self._force_endpoint = threading.Event()
+        # True when the drain/stream loops should skip VAD and model inference.
+        # In hold-to-talk mode we default to paused and only unpause while the
+        # user is holding the key — otherwise streaming inference floods the
+        # Qt event queue and the main thread stops processing key-release
+        # events, which manifests as the spacebar appearing stuck.
+        self._paused = threading.Event()
+        if settings.hold_to_talk:
+            self._paused.set()
+
+    def set_paused(self, paused: bool) -> None:
+        # Don't touch VAD state from the caller thread — that can race with
+        # an in-flight force_endpoint on a worker. The drain/stream loops
+        # advance their own cursors while paused so unpausing is clean.
+        was = self._paused.is_set()
+        if paused:
+            self._paused.set()
+        else:
+            self._paused.clear()
+        if was != paused:
+            log.info("[PIPE] set_paused %s -> %s", was, paused)
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -81,15 +101,43 @@ class Pipeline:
     # ---- hold-to-talk helpers -----------------------------------------
 
     def force_endpoint_now(self) -> None:
-        """Called when the user releases hold-to-talk: end utterance immediately."""
-        if self.vad is not None:
+        """Called when the user releases hold-to-talk: end utterance immediately.
+
+        If VAD never entered the speech state during the hold (e.g. user spoke
+        quietly or briefly), fall back to the last ~3 s of mic audio so the
+        user still gets feedback for every hold regardless of VAD opinion."""
+        log.info("[PIPE] force_endpoint_now")
+        if self.vad is None:
+            return
+        if self.vad._in_speech:
             self.vad.force_end()
+            return
+        # VAD never triggered — fall back to a slice of recent audio.
+        if self.mic is None:
+            return
+        recent = self.mic.buffer.read_latest(int(self.settings.sample_rate * 3.0))
+        # Strip leading silence using raw RMS above a low floor.
+        thresh = 0.005
+        rms_window = 320  # 20 ms at 16 kHz
+        for i in range(0, len(recent) - rms_window, rms_window):
+            if float(np.sqrt(np.mean(recent[i : i + rms_window] ** 2))) > thresh:
+                recent = recent[i:]
+                break
+        if len(recent) < int(self.settings.sample_rate * 0.1):
+            log.info("[PIPE] force_endpoint_now: no audible audio in fallback window")
+            return
+        log.info(
+            "[PIPE] force_endpoint_now fallback: VAD didn't trigger — using %dms of mic buffer",
+            len(recent) * 1000 // self.settings.sample_rate,
+        )
+        self._on_utterance(recent)
 
     # ---- internals -----------------------------------------------------
 
     def _fire_utterance_started(self) -> None:
         from .events import UtteranceStarted
 
+        log.info("[PIPE] utterance_started")
         self.emit(UtteranceStarted())
 
     def _on_vad_prob(self, prob: float) -> None:
@@ -101,6 +149,12 @@ class Pipeline:
         assert self.mic is not None and self.vad is not None
         drained = 0
         while not self._stop.is_set():
+            if self._paused.is_set():
+                # Keep the drain pointer current so we don't replay stale
+                # audio into the VAD when unpausing mid-stream.
+                drained = self.mic.buffer.total_written
+                time.sleep(0.02)
+                continue
             total = self.mic.buffer.total_written
             if total <= drained:
                 time.sleep(0.005)
@@ -118,6 +172,10 @@ class Pipeline:
         hop = int(sr * self.settings.phoneme_hop_ms / 1000)
         last_read = 0
         while not self._stop.is_set():
+            if self._paused.is_set():
+                last_read = self.mic.buffer.total_written
+                time.sleep(0.02)
+                continue
             total = self.mic.buffer.total_written
             if total - last_read < hop:
                 time.sleep(0.01)

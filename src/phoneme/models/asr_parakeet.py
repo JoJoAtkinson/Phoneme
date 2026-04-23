@@ -51,24 +51,32 @@ class ParakeetMLXASR:
     ) -> list[WordToken]:
         self.load()
         assert self._model is not None
-        # parakeet-mlx returns a Result with .sentences[].tokens[] or similar.
-        result = self._model.transcribe(audio, sampling_rate=sample_rate)
+
+        # parakeet-mlx.transcribe() takes a file path, not a raw array. Write
+        # the utterance to a short-lived temp WAV and hand it the path.
+        import tempfile
+
+        import soundfile as sf
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+            sf.write(tmp.name, audio, sample_rate, subtype="FLOAT")
+            result = self._model.transcribe(tmp.name)
+
+        # AlignedResult → AlignedSentence → AlignedToken; word timings live
+        # on the tokens. NVIDIA Parakeet checkpoints are English-only, so no
+        # language routing is needed here.
         out: list[WordToken] = []
-        # Normalize across possible result shapes
-        for sentence in getattr(result, "sentences", [result]):
-            tokens = getattr(sentence, "tokens", None) or getattr(sentence, "words", None)
-            if tokens is None:
-                text = getattr(sentence, "text", "") or str(sentence)
-                if text:
-                    out.append(WordToken(text.strip(), 0.0, 0.0, 1.0))
-                continue
-            for w in tokens:
+        for sentence in result.sentences:
+            for w in sentence.tokens:
+                text = w.text.strip()
+                if not text:
+                    continue
                 out.append(
                     WordToken(
-                        text=getattr(w, "text", str(w)).strip(),
-                        start_s=float(getattr(w, "start", 0.0) or 0.0),
-                        end_s=float(getattr(w, "end", 0.0) or 0.0),
-                        confidence=float(getattr(w, "probability", 1.0) or 1.0),
+                        text=text,
+                        start_s=float(w.start),
+                        end_s=float(w.end),
+                        confidence=float(w.confidence),
                     )
                 )
         return out

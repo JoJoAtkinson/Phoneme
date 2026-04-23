@@ -52,33 +52,56 @@ CATALOG: dict[str, ModelSpec] = {
         approx_mb=360,
         notes="English-only gruut phonemes, finer-grained for US English.",
     ),
+    "phoneme/wav2vec2-speech31-en": ModelSpec(
+        repo_id="speech31/wav2vec2-large-english-phoneme-v2",
+        kind="phoneme",
+        approx_mb=1260,
+        notes=(
+            "English-only, 315M params, trained on varied English speech. "
+            "More robust to real-world mic audio than the LJSpeech-trained "
+            "gruut model — recommended when running with a laptop/Bluetooth mic."
+        ),
+    ),
     # ---- ASR -------------------------------------------------------------
-    "asr/faster-whisper-tiny": ModelSpec(
-        repo_id="Systran/faster-whisper-tiny",
+    # English-only (.en) variants are smaller and more accurate on English
+    # speech than the same-size multilingual models. The app defaults to
+    # these; multilingual entries below are available for users who need them.
+    "asr/faster-whisper-tiny.en": ModelSpec(
+        repo_id="Systran/faster-whisper-tiny.en",
         kind="asr",
         approx_mb=75,
+        notes="English-only tiny Whisper. Fastest.",
     ),
-    "asr/faster-whisper-base": ModelSpec(
-        repo_id="Systran/faster-whisper-base",
+    "asr/faster-whisper-base.en": ModelSpec(
+        repo_id="Systran/faster-whisper-base.en",
         kind="asr",
         approx_mb=145,
+        notes="English-only base Whisper.",
     ),
+    "asr/faster-whisper-small.en": ModelSpec(
+        repo_id="Systran/faster-whisper-small.en",
+        kind="asr",
+        approx_mb=460,
+        notes="App default ASR; English-only, balanced speed/accuracy.",
+    ),
+    "asr/faster-whisper-medium.en": ModelSpec(
+        repo_id="Systran/faster-whisper-medium.en",
+        kind="asr",
+        approx_mb=1500,
+        notes="English-only medium Whisper.",
+    ),
+    # Multilingual fallbacks (no .en variant exists for large-v3).
     "asr/faster-whisper-small": ModelSpec(
         repo_id="Systran/faster-whisper-small",
         kind="asr",
         approx_mb=460,
-        notes="App default ASR; balanced speed/accuracy.",
-    ),
-    "asr/faster-whisper-medium": ModelSpec(
-        repo_id="Systran/faster-whisper-medium",
-        kind="asr",
-        approx_mb=1500,
+        notes="Multilingual small Whisper.",
     ),
     "asr/faster-whisper-large-v3": ModelSpec(
         repo_id="Systran/faster-whisper-large-v3",
         kind="asr",
         approx_mb=3000,
-        notes="Best Whisper accuracy; slower, heavier.",
+        notes="Best Whisper accuracy; multilingual only at this size.",
     ),
     "asr/parakeet-mlx": ModelSpec(
         repo_id="mlx-community/parakeet-tdt-0.6b-v2",
@@ -107,18 +130,18 @@ class Profile:
 
 PROFILES: dict[str, Profile] = {
     "minimal": Profile(
-        description="Smallest stack that boots the app (~400 MB).",
+        description="Smallest stack that boots the app (~400 MB, English-only).",
         keys=[
             "phoneme/wav2vec2-espeak",
-            "asr/faster-whisper-tiny",
+            "asr/faster-whisper-tiny.en",
             "tts/kokoro-onnx",
         ],
     ),
     "default": Profile(
-        description="Balanced defaults used at first launch (~1.1 GB).",
+        description="Balanced defaults used at first launch (~1.1 GB, English-only).",
         keys=[
             "phoneme/wav2vec2-espeak",
-            "asr/faster-whisper-small",
+            "asr/faster-whisper-small.en",
             "tts/kokoro-onnx",
         ],
     ),
@@ -126,18 +149,17 @@ PROFILES: dict[str, Profile] = {
         description="Highest-quality cross-platform stack (~3.6 GB).",
         keys=[
             "phoneme/wav2vec2-espeak",
-            "phoneme/wav2vec2-gruut-en",
-            "asr/faster-whisper-large-v3",
+            "asr/faster-whisper-medium.en",
+            "asr/faster-whisper-large-v3",  # multilingual fallback
             "tts/kokoro-onnx",
         ],
     ),
     "mac": Profile(
-        description="Best quality on Apple Silicon (adds Parakeet-MLX, ~4.8 GB).",
+        description="Best quality on Apple Silicon (adds Parakeet-MLX, ~4.8 GB, English-only).",
         keys=[
             "phoneme/wav2vec2-espeak",
-            "phoneme/wav2vec2-gruut-en",
-            "asr/faster-whisper-large-v3",
-            "asr/parakeet-mlx",
+            "asr/faster-whisper-small.en",
+            "asr/parakeet-mlx",  # English-only by design
             "tts/kokoro-onnx",
         ],
     ),
