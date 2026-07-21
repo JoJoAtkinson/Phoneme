@@ -45,8 +45,12 @@ class SettingsDialog(QDialog):
         ph_form = QFormLayout(ph)
         self.phoneme_model = QComboBox()
         for m in PhonemeModel:
-            self.phoneme_model.addItem(m.value, m)
-        self.phoneme_model.setCurrentText(self.settings.phoneme_model.value)
+            self.phoneme_model.addItem(m.display_name(), m)
+        # Select the currently-saved model by its enum value.
+        for i in range(self.phoneme_model.count()):
+            if self.phoneme_model.itemData(i) == self.settings.phoneme_model:
+                self.phoneme_model.setCurrentIndex(i)
+                break
         ph_form.addRow("Model", self.phoneme_model)
 
         self.min_conf = QDoubleSpinBox()

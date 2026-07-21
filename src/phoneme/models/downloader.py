@@ -57,10 +57,28 @@ CATALOG: dict[str, ModelSpec] = {
         kind="phoneme",
         approx_mb=1260,
         notes=(
-            "English-only, 315M params, trained on varied English speech. "
-            "More robust to real-world mic audio than the LJSpeech-trained "
-            "gruut model — recommended when running with a laptop/Bluetooth mic."
+            "Hybrid letter+phoneme output, not a pure phoneme recognizer. "
+            "Tested and rejected — outputs random letters on real mic audio."
         ),
+    ),
+    # ---- experimental candidates for A/B (not in any default profile) ---
+    "phoneme/wav2vec2-xlsr53-espeak": ModelSpec(
+        repo_id="facebook/wav2vec2-xlsr-53-espeak-cv-ft",
+        kind="phoneme",
+        approx_mb=1260,
+        notes="Sibling of app default with XLSR-53 base pretrain. Same IPA vocab.",
+    ),
+    "phoneme/wav2vec2-xls-r-timit": ModelSpec(
+        repo_id="vitouphy/wav2vec2-xls-r-300m-timit-phoneme",
+        kind="phoneme",
+        approx_mb=1260,
+        notes="English-only TIMIT phonemes (42-token IPA, no multilingual tone noise).",
+    ),
+    "phoneme/wav2vec2-base-arpa39": ModelSpec(
+        repo_id="mostafaashahin/wav2vec2-base-timit-phoneme-arpa-39",
+        kind="phoneme",
+        approx_mb=380,
+        notes="Smaller wav2vec2-base (95M); outputs ARPA-39 (two-letter codes).",
     ),
     # ---- ASR -------------------------------------------------------------
     # English-only (.en) variants are smaller and more accurate on English

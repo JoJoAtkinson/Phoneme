@@ -36,6 +36,8 @@ class PhonemeModel(str, Enum):
     WAV2VEC2_ESPEAK = "facebook/wav2vec2-lv-60-espeak-cv-ft"
     WAV2VEC2_GRUUT_EN = "bookbot/wav2vec2-ljspeech-gruut"
     WAV2VEC2_SPEECH31_EN = "speech31/wav2vec2-large-english-phoneme-v2"
+    WAV2VEC2_XLSR53_ESPEAK = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
+    WAV2VEC2_ARPA39_EN = "mostafaashahin/wav2vec2-base-timit-phoneme-arpa-39"
 
     def catalog_key(self) -> str:
         """Map the HF repo id (stored in settings) to its downloader catalog key."""
@@ -43,6 +45,18 @@ class PhonemeModel(str, Enum):
             PhonemeModel.WAV2VEC2_ESPEAK: "phoneme/wav2vec2-espeak",
             PhonemeModel.WAV2VEC2_GRUUT_EN: "phoneme/wav2vec2-gruut-en",
             PhonemeModel.WAV2VEC2_SPEECH31_EN: "phoneme/wav2vec2-speech31-en",
+            PhonemeModel.WAV2VEC2_XLSR53_ESPEAK: "phoneme/wav2vec2-xlsr53-espeak",
+            PhonemeModel.WAV2VEC2_ARPA39_EN: "phoneme/wav2vec2-base-arpa39",
+        }[self]
+
+    def display_name(self) -> str:
+        """User-facing label shown in the settings dialog."""
+        return {
+            PhonemeModel.WAV2VEC2_ESPEAK: "Facebook wav2vec2-lv60 (IPA, multilingual, 315M)",
+            PhonemeModel.WAV2VEC2_GRUUT_EN: "Bookbot LJSpeech gruut (IPA, English, 95M)",
+            PhonemeModel.WAV2VEC2_SPEECH31_EN: "speech31 (letter+phoneme hybrid, 315M)",
+            PhonemeModel.WAV2VEC2_XLSR53_ESPEAK: "Facebook wav2vec2-xlsr53 (IPA, multilingual, 315M)",
+            PhonemeModel.WAV2VEC2_ARPA39_EN: "mostafaashahin wav2vec2-base ARPA-39 (English, 95M)  ★ best A/B",
         }[self]
 
 

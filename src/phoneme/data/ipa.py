@@ -21,18 +21,24 @@ CATEGORY_COLOR = {
 _STRIP = str.maketrans("", "", "ˈˌ")
 
 
-# Canonical espeak/IPA vowel sets
-LONG_VOWELS = {"iː", "uː", "ɑː", "ɔː", "ɜː", "eː", "oː", "aː", "yː"}
-SHORT_VOWELS = {"ɪ", "ʊ", "ʌ", "ə", "æ", "ɛ", "ɒ", "ɐ", "ɨ", "ʉ"}
-DIPHTHONGS = {"aɪ", "aʊ", "eɪ", "oʊ", "ɔɪ", "ɪə", "eə", "ʊə", "əʊ"}
+# Canonical espeak/IPA vowel sets, plus ARPA-39 equivalents so the same
+# classifier works regardless of the emitting model's notation.
+LONG_VOWELS = {"iː", "uː", "ɑː", "ɔː", "ɜː", "eː", "oː", "aː", "yː",
+               "iy", "uw", "er"}
+SHORT_VOWELS = {"ɪ", "ʊ", "ʌ", "ə", "æ", "ɛ", "ɒ", "ɐ", "ɨ", "ʉ",
+                "ih", "uh", "ah", "eh", "ae", "aa", "ao"}
+DIPHTHONGS = {"aɪ", "aʊ", "eɪ", "oʊ", "ɔɪ", "ɪə", "eə", "ʊə", "əʊ",
+              "ay", "aw", "ey", "ow", "oy"}
 
 VOICED_STOPS = {"b", "d", "ɡ", "g"}
 UNVOICED_STOPS = {"p", "t", "k", "ʔ"}
-NASALS = {"m", "n", "ŋ", "ɲ"}
-VOICED_FRICATIVES = {"v", "z", "ʒ", "ð", "ɣ", "ʁ", "h"}
-UNVOICED_FRICATIVES = {"f", "s", "ʃ", "θ", "x", "ç"}
-AFFRICATES = {"tʃ", "dʒ", "ts", "dz"}
-APPROXIMANTS = {"j", "w", "l", "ɹ", "r", "ɻ"}
+NASALS = {"m", "n", "ŋ", "ɲ", "ng"}
+VOICED_FRICATIVES = {"v", "z", "ʒ", "ð", "ɣ", "ʁ", "h",
+                     "zh", "dh", "hh"}
+UNVOICED_FRICATIVES = {"f", "s", "ʃ", "θ", "x", "ç",
+                       "sh", "th"}
+AFFRICATES = {"tʃ", "dʒ", "ts", "dz", "ch", "jh"}
+APPROXIMANTS = {"j", "w", "l", "ɹ", "r", "ɻ", "y"}
 
 
 def classify(ipa: str) -> str:
@@ -167,6 +173,10 @@ def normalize_to_english(ipa: str) -> str:
 # primary school — uses macron (ā ē ī ō ū) for long vowels and breve
 # (ă ĕ ĭ ŏ ŭ) for short, plus common digraphs (sh, ch, th, ng). The chip
 # widget shows this as the main glyph; the raw IPA stays in the tooltip.
+#
+# Includes both IPA tokens (from espeak/gruut/xlsr models) and ARPA-39
+# tokens (from mostafaashahin/wav2vec2-base-timit-phoneme-arpa-39), so we
+# can render clean elementary labels regardless of which model is selected.
 SIMPLE_LABEL = {
     # ---- vowels ------------------------------------------------------
     # long vowels and diphthongs
@@ -203,6 +213,24 @@ SIMPLE_LABEL = {
     "tʃ": "ch",
     "dʒ": "j", "d͡ʒ": "j",  # the consonant in "jump"
     "ɾ": "t",        # flap t (as in "butter") — show as plain t for kids
+    # ---- ARPA-39 (two-letter codes, from base-arpa39 model) ----------
+    # Long vowels
+    "iy": "ē",  "uw": "ū",
+    "ey": "ā",  "ay": "ī",  "ow": "ō",  "oy": "oy",  "aw": "ow",
+    # Short vowels
+    "ih": "ĭ",  "eh": "ĕ",  "ae": "ă",  "ah": "ŭ",
+    "uh": "oo", "aa": "ŏ",  "ao": "aw",
+    # R-colored
+    "er": "ər",
+    # Consonants (lowercase ARPA → letter or digraph)
+    "hh": "h",
+    "ng": "ng",
+    "sh": "sh", "zh": "zh",
+    "th": "th",  "dh": "th",
+    "ch": "ch", "jh": "j",
+    # Single-letter ARPA tokens already map naturally (b, d, f, g, k, l,
+    # m, n, p, r, s, t, v, w, y, z) — the dict-fallthrough returns them
+    # unchanged, which is what we want.
 }
 
 
